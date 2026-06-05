@@ -33,6 +33,7 @@ import { OCREngine } from "./ocr-engine";
 import { DraftStore } from "./draft-store";
 import { DrawingTool, OCRProvider, PencilPluginSettings } from "./types";
 import { mergeCanvasBody, NoteCanvasParts, splitNoteForCanvas } from "./note-content";
+import { getOCRProviderLabel } from "./ocr-provider";
 
 export const PENCIL_VIEW_TYPE = "apple-pencil-canvas";
 
@@ -128,6 +129,12 @@ export class PencilCanvasView extends ItemView {
       });
     }
 
+    this.ocrStatusEl = this.toolbar.createEl("div", {
+      cls: "pencil-ocr-status",
+      attr: { title: "Current handwriting recognition provider" },
+    });
+    this.updateOCRStatus();
+
     // Color picker — default to theme-aware color
     const isDarkMode = document.body.classList.contains("theme-dark");
     const initialColor = this.settings.defaultPenColor === "#000000" && isDarkMode
@@ -151,12 +158,6 @@ export class PencilCanvasView extends ItemView {
       this.engine?.setWidth(Number(widthSlider.value));
     });
 
-    this.ocrStatusEl = this.toolbar.createEl("div", {
-      cls: "pencil-ocr-status",
-      attr: { title: "Current handwriting recognition provider" },
-    });
-    this.updateOCRStatus();
-
     // Spacer
     this.toolbar.createDiv({ cls: "pencil-toolbar-spacer" });
 
@@ -177,11 +178,11 @@ export class PencilCanvasView extends ItemView {
       }).open();
     });
 
-    // Convert to text
+    // Save recognized handwriting back into the note
     const convertBtn = this.toolbar.createEl("button", {
       cls: "pencil-action-btn pencil-convert-btn",
-      text: "Convert to Text",
-      attr: { title: "Convert handwriting to markdown text" },
+      text: "Save",
+      attr: { title: "Save handwriting into the note" },
     });
     convertBtn.addEventListener("click", () => this.convertToText());
 
@@ -321,7 +322,7 @@ export class PencilCanvasView extends ItemView {
     } finally {
       this.isConverting = false;
       if (convertBtn) {
-        convertBtn.textContent = "Convert to Text";
+        convertBtn.textContent = "Save";
         convertBtn.disabled = false;
       }
     }
@@ -348,23 +349,7 @@ export class PencilCanvasView extends ItemView {
 
   private updateOCRStatus() {
     if (!this.ocrStatusEl) return;
-    this.ocrStatusEl.textContent = `OCR: ${this.getOCRProviderLabel(this.settings.ocrProvider)}`;
-  }
-
-  private getOCRProviderLabel(provider: OCRProvider): string {
-    switch (provider) {
-      case "openai":
-        return "OpenAI GPT-4o";
-      case "google":
-        return "Google Vision";
-      case "claude":
-        return "Claude";
-      case "gemini":
-        return "Gemini";
-      case "tesseract":
-      default:
-        return "On-device Tesseract";
-    }
+    this.ocrStatusEl.textContent = `OCR: ${getOCRProviderLabel(this.settings.ocrProvider)}`;
   }
 
   private applyStrikethroughs(text: string): string {

@@ -164,8 +164,8 @@
 /* Floating pencil button in editor */
 .pencil-float-btn {
   position: absolute;
-  bottom: 24px;
   right: 24px;
+  bottom: 24px;
   z-index: 100;
   width: 52px;
   height: 52px;
@@ -200,5 +200,10 @@
   .pencil-action-btn {
     padding: 6px 10px;
     font-size: 12px;
+  }
+
+  .pencil-float-btn {
+    right: 16px;
+    bottom: 16px;
   }
 }
