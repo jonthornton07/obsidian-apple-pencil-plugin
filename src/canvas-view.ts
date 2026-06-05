@@ -31,7 +31,8 @@ import { OCRKeys } from "./ocr-engine";
 import { StrokeEngine } from "./stroke-engine";
 import { OCREngine } from "./ocr-engine";
 import { DraftStore } from "./draft-store";
-import { DrawingTool, PencilPluginSettings } from "./types";
+import { DrawingTool, OCRProvider, PencilPluginSettings } from "./types";
+import { mergeCanvasBody, NoteCanvasParts, splitNoteForCanvas } from "./note-content";
 
 export const PENCIL_VIEW_TYPE = "apple-pencil-canvas";
 
@@ -46,6 +47,9 @@ export class PencilCanvasView extends ItemView {
   private isConverting = false;
   private isDirty = false;
   private isEditMode = false; // true when existing note content was loaded onto canvas
+  private noteParts: NoteCanvasParts = { protectedPrefix: "", editableBody: "" };
+  private ocrStatusEl: HTMLElement | null = null;
+  private activeOCRProvider: OCRProvider;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -59,6 +63,7 @@ export class PencilCanvasView extends ItemView {
     this.settings = settings;
     this.ocrEngine = ocrEngine;
     this.draftStore = draftStore;
+    this.activeOCRProvider = settings.ocrProvider;
   }
 
   getViewType(): string {
@@ -84,11 +89,13 @@ export class PencilCanvasView extends ItemView {
     this.buildCanvas(container);
     await this.loadExistingContent();
     await this.loadDraft();
+    this.syncOCRProvider();
 
     // Refresh note content every time this canvas becomes the active leaf
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", async (leaf) => {
         if (leaf === this.leaf) {
+          this.syncOCRProvider();
           await this.loadExistingContent();
         }
       })
@@ -143,6 +150,12 @@ export class PencilCanvasView extends ItemView {
     widthSlider.addEventListener("input", () => {
       this.engine?.setWidth(Number(widthSlider.value));
     });
+
+    this.ocrStatusEl = this.toolbar.createEl("div", {
+      cls: "pencil-ocr-status",
+      attr: { title: "Current handwriting recognition provider" },
+    });
+    this.updateOCRStatus();
 
     // Spacer
     this.toolbar.createDiv({ cls: "pencil-toolbar-spacer" });
@@ -211,10 +224,10 @@ export class PencilCanvasView extends ItemView {
   private async loadExistingContent() {
     if (!this.engine) return;
     const content = await this.app.vault.read(this.noteFile);
-    if (!content.trim()) return;
+    this.noteParts = splitNoteForCanvas(content);
     const isDark = document.body.classList.contains("theme-dark");
-    this.engine.renderExistingText(content, isDark);
-    this.isEditMode = true;
+    this.engine.renderExistingText(this.noteParts.editableBody, isDark);
+    this.isEditMode = content.length > 0;
   }
 
   private async loadDraft() {
@@ -258,6 +271,7 @@ export class PencilCanvasView extends ItemView {
     }
 
     try {
+      this.syncOCRProvider();
       let text: string;
       const keys = this.resolveOCRKeys();
 
@@ -277,12 +291,12 @@ export class PencilCanvasView extends ItemView {
           text = text + (text ? "\n\n" : "") + inkText;
         }
 
-        if (!text) {
+        if (!text && !this.noteParts.protectedPrefix) {
           new Notice("No text to save.");
           return;
         }
 
-        await this.app.vault.process(this.noteFile, () => text + "\n");
+        await this.app.vault.process(this.noteFile, () => mergeCanvasBody(this.noteParts, text));
       } else {
         const imageDataUrl = this.engine.getCanvasImageDataUrl();
         text = await this.ocrEngine.recognize(imageDataUrl, keys);
@@ -321,6 +335,36 @@ export class PencilCanvasView extends ItemView {
       claude: this.settings.claudeSecretId ? (s.getSecret(this.settings.claudeSecretId) ?? "") : "",
       gemini: this.settings.geminiSecretId ? (s.getSecret(this.settings.geminiSecretId) ?? "") : "",
     };
+  }
+
+  private syncOCRProvider() {
+    const provider = this.settings.ocrProvider;
+    if (provider !== this.activeOCRProvider) {
+      this.ocrEngine.setProvider(provider);
+      this.activeOCRProvider = provider;
+    }
+    this.updateOCRStatus();
+  }
+
+  private updateOCRStatus() {
+    if (!this.ocrStatusEl) return;
+    this.ocrStatusEl.textContent = `OCR: ${this.getOCRProviderLabel(this.settings.ocrProvider)}`;
+  }
+
+  private getOCRProviderLabel(provider: OCRProvider): string {
+    switch (provider) {
+      case "openai":
+        return "OpenAI GPT-4o";
+      case "google":
+        return "Google Vision";
+      case "claude":
+        return "Claude";
+      case "gemini":
+        return "Gemini";
+      case "tesseract":
+      default:
+        return "On-device Tesseract";
+    }
   }
 
   private applyStrikethroughs(text: string): string {

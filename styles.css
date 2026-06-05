@@ -77,6 +77,16 @@
   accent-color: var(--interactive-accent);
 }
 
+.pencil-ocr-status {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .pencil-toolbar-spacer {
   flex: 1;
 }
